@@ -2,22 +2,32 @@ package binance
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 
-	"github.com/adshao/go-binance/v2/common/websocket"
-	"github.com/adshao/go-binance/v2/common/websocket/mock"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 )
 
-func (s *sorOrderPlaceServiceWsTestSuite) SetupTest() {
-	s.apiKey = "dummyApiKey"
-	s.secretKey = "dummySecretKey"
-	s.signedKey = "HMAC"
-	s.timeOffset = 0
+type sorOrderPlaceServiceWsTestSuite struct {
+	wsTestScaffold
 
-	s.requestID = "3a4437e2-41a3-4c19-897c-9cadc5dce8b6"
+	symbol           string
+	side             SideType
+	orderType        OrderType
+	quantity         string
+	price            string
+	newClientOrderID string
+
+	sorOrderPlace        *SorOrderPlaceWsService
+	sorOrderPlaceRequest *SorOrderPlaceWsRequest
+}
+
+func TestSorOrderPlaceServiceWsPlace(t *testing.T) {
+	suite.Run(t, new(sorOrderPlaceServiceWsTestSuite))
+}
+
+func (s *sorOrderPlaceServiceWsTestSuite) SetupTest() {
+	s.initScaffold("3a4437e2-41a3-4c19-897c-9cadc5dce8b6")
 
 	s.symbol = "BTCUSDT"
 	s.side = SideTypeBuy
@@ -25,9 +35,6 @@ func (s *sorOrderPlaceServiceWsTestSuite) SetupTest() {
 	s.quantity = "0.5"
 	s.price = "31000"
 	s.newClientOrderID = "sBI1KM6nNtOfj5tccZSKly"
-
-	s.ctrl = gomock.NewController(s.T())
-	s.client = mock.NewMockClient(s.ctrl)
 
 	s.sorOrderPlace = &SorOrderPlaceWsService{
 		c:         s.client,
@@ -47,34 +54,20 @@ func (s *sorOrderPlaceServiceWsTestSuite) SetupTest() {
 }
 
 func (s *sorOrderPlaceServiceWsTestSuite) TearDownTest() {
-	s.ctrl.Finish()
+	s.finishScaffold()
 }
 
-type sorOrderPlaceServiceWsTestSuite struct {
-	suite.Suite
-	apiKey     string
-	secretKey  string
-	signedKey  string
-	timeOffset int64
-
-	ctrl   *gomock.Controller
-	client *mock.MockClient
-
-	requestID        string
-	symbol           string
-	side             SideType
-	orderType        OrderType
-	quantity         string
-	price            string
-	newClientOrderID string
-
-	sorOrderPlace        *SorOrderPlaceWsService
-	sorOrderPlaceRequest *SorOrderPlaceWsRequest
+func (s *sorOrderPlaceServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {
+	s.sorOrderPlace = &SorOrderPlaceWsService{
+		c:          s.client,
+		ApiKey:     apiKey,
+		SecretKey:  secretKey,
+		KeyType:    signKeyType,
+		TimeOffset: timeOffset,
+	}
 }
 
-func TestSorOrderPlaceServiceWsPlace(t *testing.T) {
-	suite.Run(t, new(sorOrderPlaceServiceWsTestSuite))
-}
+// --- Do tests ---
 
 func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlace() {
 	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
@@ -85,41 +78,13 @@ func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlace() {
 	s.NoError(err)
 }
 
-func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlace_EmptyRequestID() {
-	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().Write(gomock.Any(), gomock.Any()).Return(nil).Times(0)
-
-	err := s.sorOrderPlace.Do("", s.sorOrderPlaceRequest)
-	s.ErrorIs(err, websocket.ErrorRequestIDNotSet)
+func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlace_ErrorBranches() {
+	s.assertDoErrorBranches(s.reset, func(reqID string) error {
+		return s.sorOrderPlace.Do(reqID, s.sorOrderPlaceRequest)
+	})
 }
 
-func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlace_EmptyApiKey() {
-	s.reset("", s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().Write(s.requestID, gomock.Any()).Return(nil).Times(0)
-
-	err := s.sorOrderPlace.Do(s.requestID, s.sorOrderPlaceRequest)
-	s.ErrorIs(err, websocket.ErrorApiKeyIsNotSet)
-}
-
-func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlace_EmptySecretKey() {
-	s.reset(s.apiKey, "", s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().Write(s.requestID, gomock.Any()).Return(nil).Times(0)
-
-	err := s.sorOrderPlace.Do(s.requestID, s.sorOrderPlaceRequest)
-	s.ErrorIs(err, websocket.ErrorSecretKeyIsNotSet)
-}
-
-func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlace_EmptySignKeyType() {
-	s.reset(s.apiKey, s.secretKey, "", s.timeOffset)
-
-	s.client.EXPECT().Write(s.requestID, gomock.Any()).Return(nil).Times(0)
-
-	err := s.sorOrderPlace.Do(s.requestID, s.sorOrderPlaceRequest)
-	s.Error(err)
-}
+// --- SyncDo tests ---
 
 func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlaceSync() {
 	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
@@ -182,57 +147,8 @@ func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlaceSync() {
 	s.Equal(true, response.Result[0].UsedSor)
 }
 
-func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlaceSync_EmptyRequestID() {
-	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	req := s.sorOrderPlaceRequest
-	response, err := s.sorOrderPlace.SyncDo("", req)
-	s.Nil(response)
-	s.ErrorIs(err, websocket.ErrorRequestIDNotSet)
-}
-
-func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlaceSync_EmptyApiKey() {
-	s.reset("", s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	response, err := s.sorOrderPlace.SyncDo(s.requestID, s.sorOrderPlaceRequest)
-	s.Nil(response)
-	s.ErrorIs(err, websocket.ErrorApiKeyIsNotSet)
-}
-
-func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlaceSync_EmptySecretKey() {
-	s.reset(s.apiKey, "", s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	response, err := s.sorOrderPlace.SyncDo(s.requestID, s.sorOrderPlaceRequest)
-	s.Nil(response)
-	s.ErrorIs(err, websocket.ErrorSecretKeyIsNotSet)
-}
-
-func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlaceSync_EmptySignKeyType() {
-	s.reset(s.apiKey, s.secretKey, "", s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	response, err := s.sorOrderPlace.SyncDo(s.requestID, s.sorOrderPlaceRequest)
-	s.Nil(response)
-	s.Error(err)
-}
-
-func (s *sorOrderPlaceServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {
-	s.sorOrderPlace = &SorOrderPlaceWsService{
-		c:          s.client,
-		ApiKey:     apiKey,
-		SecretKey:  secretKey,
-		KeyType:    signKeyType,
-		TimeOffset: timeOffset,
-	}
+func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlaceSync_ErrorBranches() {
+	s.assertSyncDoErrorBranches(s.reset, func(reqID string) (interface{}, error) {
+		return s.sorOrderPlace.SyncDo(reqID, s.sorOrderPlaceRequest)
+	})
 }
