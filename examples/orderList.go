@@ -42,27 +42,100 @@ import (
 	"github.com/adshao/go-binance/v2/common"
 )
 
-// OrderListPlaceOCO demonstrates creating an OCO order using WebSocket API
-func OrderListPlaceOCO() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
+// ---------------------------------------------------------------------------
+// Example helpers – keep boilerplate out of each demo function
+// ---------------------------------------------------------------------------
 
-	// Validate configuration
+// newClient sets up testnet config, validates credentials, and returns a ready
+// Binance client.  Every example starts with these three steps, so we fold
+// them into one call.  Returns nil when setup fails (error is already printed).
+func newClient(label string) *binance.Client {
+	AppConfig.SetupTestnet()
 	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+		fmt.Printf("[%s] Configuration error: %v\n", label, err)
+		return nil
+	}
+	return AppConfig.GetClient()
+}
+
+// newRequestID generates a unique spot request ID and prints it for tracing.
+func newRequestID(label string) string {
+	id := common.GenerateSpotId()
+	fmt.Printf("[%s] Request ID: %s\n", label, id)
+	return id
+}
+
+// doSync wraps the synchronous SyncDo pattern used by most examples:
+// generate a request ID, call SyncDo, and handle errors uniformly.
+// The caller only needs to supply a label (for log prefix) and a closure that
+// performs the actual SyncDo call, keeping request construction visible.
+//
+// Usage:
+//
+//	doSync("OTO", func(requestID string) (any, error) {
+//	    return service.SyncDo(requestID, request)
+//	})
+func doSync(label string, fn func(requestID string) (any, error)) {
+	requestID := newRequestID(label)
+	resp, err := fn(requestID)
+	if err != nil {
+		fmt.Printf("[%s] Error: %v\n", label, err)
+		return
+	}
+	fmt.Printf("[%s] Response: %+v\n", label, resp)
+}
+
+// doAsync wraps the async Do + channel-listen pattern used by examples that
+// need to wait for a WebSocket push response.  It sends the request, then
+// blocks until a response or error arrives (or timeout), so callers don't
+// have to write goroutines and time.Sleep by hand.
+//
+// Usage:
+//
+//	doAsync("OCO", func(requestID string) (readCh <-chan []byte, errCh <-chan error, err error) {
+//	    err = service.Do(requestID, request)
+//	    return service.GetReadChannel(), service.GetReadErrorChannel(), err
+//	})
+func doAsync(label string, timeout time.Duration, fn func(requestID string) (<-chan []byte, <-chan error, error)) {
+	requestID := newRequestID(label)
+	readCh, errCh, err := fn(requestID)
+	if err != nil {
+		fmt.Printf("[%s] Error sending request: %v\n", label, err)
 		return
 	}
 
-	client := AppConfig.GetClient()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 
-	// Create OCO WebSocket service
+	select {
+	case resp := <-readCh:
+		fmt.Printf("[%s] Response: %s\n", label, string(resp))
+	case e := <-errCh:
+		fmt.Printf("[%s] Error: %v\n", label, e)
+	case <-timer.C:
+		fmt.Printf("[%s] Timed out waiting for response\n", label)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Example functions – each one focuses on its own request construction
+// ---------------------------------------------------------------------------
+
+// OrderListPlaceOCO demonstrates creating an OCO order using WebSocket API.
+// This example uses the async pattern because OCO responses arrive via push.
+func OrderListPlaceOCO() {
+	client := newClient("OCO")
+	if client == nil {
+		return
+	}
+
 	service, err := client.NewOrderListCreateWsService()
 	if err != nil {
-		fmt.Printf("Error creating OCO service: %v\n", err)
+		fmt.Printf("[OCO] Error creating service: %v\n", err)
 		return
 	}
 
-	// Create OCO order request
+	// --- OCO-specific request ------------------------------------------------
 	request := binance.NewOrderListCreateWsRequest().
 		Symbol("BTCUSDT").
 		Side(binance.SideTypeSell).
@@ -76,103 +149,65 @@ func OrderListPlaceOCO() {
 		BelowStopPrice("110000").
 		BelowTimeInForce(binance.TimeInForceTypeGTC).
 		NewOrderRespType(binance.NewOrderRespTypeFULL)
+	// --------------------------------------------------------------------------
 
-	requestID := common.GenerateSpotId()
+	doAsync("OCO", 5*time.Second, func(requestID string) (<-chan []byte, <-chan error, error) {
+		err := service.Do(requestID, request)
+		return service.GetReadChannel(), service.GetReadErrorChannel(), err
+	})
 
-	// Send async request
-	err = service.Do(requestID, request)
-	if err != nil {
-		fmt.Printf("Error placing OCO order: %v\n", err)
-		return
-	}
-
-	fmt.Printf("OCO order sent with request ID: %s\n", requestID)
-
-	// Listen for response
-	go func() {
-		for {
-			select {
-			case response := <-service.GetReadChannel():
-				fmt.Printf("OCO Response: %s\n", string(response))
-				return
-			case err := <-service.GetReadErrorChannel():
-				fmt.Printf("OCO Error: %v\n", err)
-				return
-			}
-		}
-	}()
-
-	time.Sleep(5 * time.Second)
 	service.ReceiveAllDataBeforeStop(2 * time.Second)
 }
 
-// OrderListPlaceOTO demonstrates creating an OTO order using WebSocket API
+// OrderListPlaceOTO demonstrates creating an OTO order using WebSocket API.
+// Uses the synchronous request/response pattern.
 func OrderListPlaceOTO() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
-
-	// Validate configuration
-	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+	client := newClient("OTO")
+	if client == nil {
 		return
 	}
 
-	client := AppConfig.GetClient()
-
-	// Create OTO WebSocket service
 	service, err := client.NewOrderListPlaceOtoWsService()
 	if err != nil {
-		fmt.Printf("Error creating OTO service: %v\n", err)
+		fmt.Printf("[OTO] Error creating service: %v\n", err)
 		return
 	}
 
-	// Create OTO order request
+	// --- OTO-specific request ------------------------------------------------
 	request := binance.NewOrderListPlaceOtoWsRequest().
 		Symbol("BTCUSDT").
 		WorkingType(binance.OrderTypeLimit).
 		WorkingSide(binance.SideTypeBuy).
 		WorkingPrice("30000").
 		WorkingQuantity("0.001").
+		WorkingTimeInForce(binance.TimeInForceTypeGTC).
 		PendingType(binance.OrderTypeLimit).
 		PendingSide(binance.SideTypeSell).
-		WorkingTimeInForce(binance.TimeInForceTypeGTC).
 		PendingTimeInForce(binance.TimeInForceTypeGTC).
 		PendingPrice("32000").
 		PendingQuantity("0.001")
+	// --------------------------------------------------------------------------
 
-	requestID := common.GenerateSpotId()
-
-	// Send synchronous request
-	response, err := service.SyncDo(requestID, request)
-	if err != nil {
-		fmt.Printf("Error placing OTO order: %v\n", err)
-		return
-	}
-
-	fmt.Printf("OTO Order Response: %+v\n", response)
+	doSync("OTO", func(requestID string) (any, error) {
+		return service.SyncDo(requestID, request)
+	})
 }
 
-// OrderListPlaceOTOCO demonstrates creating an OTOCO order using WebSocket API
+// OrderListPlaceOTOCO demonstrates creating an OTOCO order using WebSocket API.
+// Uses the synchronous request/response pattern.
 func OrderListPlaceOTOCO() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
-
-	// Validate configuration
-	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+	client := newClient("OTOCO")
+	if client == nil {
 		return
 	}
 
-	client := AppConfig.GetClient()
-
-	// Create OTOCO WebSocket service
 	service, err := client.NewOrderListPlaceOtocoWsService()
 	if err != nil {
-		fmt.Printf("Error creating OTOCO service: %v\n", err)
+		fmt.Printf("[OTOCO] Error creating service: %v\n", err)
 		return
 	}
 
-	// Create OTOCO order request
+	// --- OTOCO-specific request ----------------------------------------------
 	request := binance.NewOrderListPlaceOtocoWsRequest().
 		Symbol("BTCUSDT").
 		WorkingType(binance.OrderTypeLimit).
@@ -187,77 +222,53 @@ func OrderListPlaceOTOCO() {
 		PendingBelowType(binance.OrderTypeStopLoss).
 		PendingBelowStopPrice("28000").
 		ListClientOrderID("testOTOCOList")
+	// --------------------------------------------------------------------------
 
-	requestID := common.GenerateSpotId()
-
-	// Send synchronous request
-	response, err := service.SyncDo(requestID, request)
-	if err != nil {
-		fmt.Printf("Error placing OTOCO order: %v\n", err)
-		return
-	}
-
-	fmt.Printf("OTOCO Order Response: %+v\n", response)
+	doSync("OTOCO", func(requestID string) (any, error) {
+		return service.SyncDo(requestID, request)
+	})
 }
 
-// OrderListCancel demonstrates canceling an order list using WebSocket API
+// OrderListCancel demonstrates canceling an order list using WebSocket API.
+// Uses the synchronous request/response pattern.
 func OrderListCancel() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
-
-	// Validate configuration
-	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+	client := newClient("Cancel")
+	if client == nil {
 		return
 	}
 
-	client := AppConfig.GetClient()
-
-	// Create order list cancel WebSocket service
 	service, err := client.NewOrderListCancelWsService()
 	if err != nil {
-		fmt.Printf("Error creating cancel service: %v\n", err)
+		fmt.Printf("[Cancel] Error creating service: %v\n", err)
 		return
 	}
 
-	// Create cancel request
+	// --- Cancel-specific request ---------------------------------------------
 	request := binance.NewOrderListCancelWsRequest().
 		Symbol("BTCUSDT").
 		OrderListID(123456789) // Replace with actual order list ID
+	// --------------------------------------------------------------------------
 
-	requestID := common.GenerateSpotId()
-
-	// Send synchronous request
-	response, err := service.SyncDo(requestID, request)
-	if err != nil {
-		fmt.Printf("Error canceling order list: %v\n", err)
-		return
-	}
-
-	fmt.Printf("Cancel Order List Response: %+v\n", response)
+	doSync("Cancel", func(requestID string) (any, error) {
+		return service.SyncDo(requestID, request)
+	})
 }
 
-// SorOrderPlace demonstrates placing a SOR order using WebSocket API
+// SorOrderPlace demonstrates placing a SOR order using WebSocket API.
+// Uses the synchronous pattern and inspects the SOR-specific result fields.
 func SorOrderPlace() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
-
-	// Validate configuration
-	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+	client := newClient("SOR-Place")
+	if client == nil {
 		return
 	}
 
-	client := AppConfig.GetClient()
-
-	// Create SOR order placement WebSocket service
 	service, err := client.NewSorOrderPlaceWsService()
 	if err != nil {
-		fmt.Printf("Error creating SOR service: %v\n", err)
+		fmt.Printf("[SOR-Place] Error creating service: %v\n", err)
 		return
 	}
 
-	// Create SOR order request - using ETHUSDT as it has SOR support
+	// --- SOR Place-specific request (ETHUSDT has SOR support) ----------------
 	request := binance.NewSorOrderPlaceWsRequest().
 		Symbol("ETHUSDT").
 		Side(binance.SideTypeBuy).
@@ -267,47 +278,39 @@ func SorOrderPlace() {
 		TimeInForce(binance.TimeInForceTypeGTC).
 		NewClientOrderID("sBI1KM6nNtOfj5tccZSKly").
 		NewOrderRespType(binance.NewOrderRespTypeFULL)
+	// --------------------------------------------------------------------------
 
-	requestID := common.GenerateSpotId()
-
-	// Send synchronous request
+	requestID := newRequestID("SOR-Place")
 	response, err := service.SyncDo(requestID, request)
 	if err != nil {
-		fmt.Printf("Error placing SOR order: %v\n", err)
+		fmt.Printf("[SOR-Place] Error: %v\n", err)
 		return
 	}
+	fmt.Printf("[SOR-Place] Response: %+v\n", response)
 
-	fmt.Printf("SOR Order Response: %+v\n", response)
-
-	// Check if result array is not empty before accessing
+	// SOR-specific: check whether Smart Order Routing was used
 	if len(response.Result) > 0 {
-		fmt.Printf("Used SOR: %v\n", response.Result[0].UsedSor)
+		fmt.Printf("[SOR-Place] Used SOR: %v\n", response.Result[0].UsedSor)
 	} else {
-		fmt.Printf("No order results returned\n")
+		fmt.Printf("[SOR-Place] No order results returned\n")
 	}
 }
 
-// SorOrderTest demonstrates testing a SOR order using WebSocket API
+// SorOrderTest demonstrates testing a SOR order (dry-run) using WebSocket API.
+// Uses the synchronous pattern and prints commission rate details.
 func SorOrderTest() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
-
-	// Validate configuration
-	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+	client := newClient("SOR-Test")
+	if client == nil {
 		return
 	}
 
-	client := AppConfig.GetClient()
-
-	// Create SOR order test WebSocket service
 	service, err := client.NewSorOrderTestWsService()
 	if err != nil {
-		fmt.Printf("Error creating SOR test service: %v\n", err)
+		fmt.Printf("[SOR-Test] Error creating service: %v\n", err)
 		return
 	}
 
-	// Create SOR test request with commission rates - using ETHUSDT for SOR support
+	// --- SOR Test-specific request (ETHUSDT for SOR support) -----------------
 	request := binance.NewSorOrderTestWsRequest().
 		Symbol("ETHUSDT").
 		Side(binance.SideTypeBuy).
@@ -316,28 +319,29 @@ func SorOrderTest() {
 		Price("2000").
 		TimeInForce(binance.TimeInForceTypeGTC).
 		ComputeCommissionRates(true)
+	// --------------------------------------------------------------------------
 
-	requestID := common.GenerateSpotId()
-
-	// Send synchronous request
+	requestID := newRequestID("SOR-Test")
 	response, err := service.SyncDo(requestID, request)
 	if err != nil {
-		fmt.Printf("Error testing SOR order: %v\n", err)
+		fmt.Printf("[SOR-Test] Error: %v\n", err)
 		return
 	}
+	fmt.Printf("[SOR-Test] Response: %+v\n", response)
 
-	fmt.Printf("SOR Test Response: %+v\n", response)
+	// SOR Test-specific: show commission rates when available
 	if response.Result.StandardCommissionForOrder != nil {
-		fmt.Printf("Standard Commission - Maker: %s, Taker: %s\n",
+		fmt.Printf("[SOR-Test] Standard Commission - Maker: %s, Taker: %s\n",
 			response.Result.StandardCommissionForOrder.Maker,
 			response.Result.StandardCommissionForOrder.Taker)
 	}
 }
 
+// RunOrderListExamples runs all order list examples sequentially.
 func RunOrderListExamples() {
 	fmt.Println("=== Binance Order List WebSocket API Examples ===")
 
-	fmt.Println("1. OCO Order (Current)")
+	fmt.Println("\n1. OCO Order (Current)")
 	OrderListPlaceOCO()
 	time.Sleep(2 * time.Second)
 
