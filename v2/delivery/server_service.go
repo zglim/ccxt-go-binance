@@ -3,6 +3,13 @@ package delivery
 import (
 	"context"
 	"net/http"
+
+	"github.com/adshao/go-binance/v2/common"
+)
+
+const (
+	serverPingEndpoint = "/dapi/v1/ping"
+	serverTimeEndpoint = "/dapi/v1/time"
 )
 
 // PingService ping server
@@ -14,7 +21,7 @@ type PingService struct {
 func (s *PingService) Do(ctx context.Context, opts ...RequestOption) (err error) {
 	r := &request{
 		method:   http.MethodGet,
-		endpoint: "/dapi/v1/ping",
+		endpoint: serverPingEndpoint,
 	}
 	_, err = s.c.callAPI(ctx, r, opts...)
 	return err
@@ -29,18 +36,13 @@ type ServerTimeService struct {
 func (s *ServerTimeService) Do(ctx context.Context, opts ...RequestOption) (serverTime int64, err error) {
 	r := &request{
 		method:   http.MethodGet,
-		endpoint: "/dapi/v1/time",
+		endpoint: serverTimeEndpoint,
 	}
 	data, err := s.c.callAPI(ctx, r, opts...)
 	if err != nil {
 		return 0, err
 	}
-	j, err := newJSON(data)
-	if err != nil {
-		return 0, err
-	}
-	serverTime = j.Get("serverTime").MustInt64()
-	return serverTime, nil
+	return common.ParseServerTime(data)
 }
 
 // SetServerTimeService set server time
@@ -54,7 +56,7 @@ func (s *SetServerTimeService) Do(ctx context.Context, opts ...RequestOption) (t
 	if err != nil {
 		return 0, err
 	}
-	timeOffset = currentTimestamp() - serverTime
+	timeOffset = common.ComputeTimeOffset(currentTimestamp(), serverTime)
 	s.c.TimeOffset = timeOffset
 	return timeOffset, nil
 }
