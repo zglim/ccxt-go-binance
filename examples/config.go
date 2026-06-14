@@ -57,3 +57,21 @@ func (c *Config) Validate() error {
 	}
 	return nil
 }
+
+// setupExampleClient applies the testnet setting, validates the configured
+// credentials, and returns a ready-to-use client. When the configuration is
+// incomplete it prints a descriptive message and returns ok=false, so every
+// example can start with the same two lines:
+//
+//	client, ok := setupExampleClient()
+//	if !ok {
+//		return
+//	}
+func setupExampleClient() (client *binance.Client, ok bool) {
+	AppConfig.SetupTestnet()
+	if err := AppConfig.Validate(); err != nil {
+		fmt.Printf("Configuration error: %v\n", err)
+		return nil, false
+	}
+	return AppConfig.GetClient(), true
+}

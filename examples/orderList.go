@@ -9,7 +9,6 @@ This file demonstrates how to use all the new WebSocket services for order lists
 4. OrderListCancel() - Cancels existing order lists
 5. SorOrderPlace() - Places orders using Smart Order Routing (SOR)
 6. SorOrderTest() - Tests SOR orders without execution
-7. OrderListPlaceDeprecated() - Uses the deprecated OCO endpoint
 
 Usage:
 1. Set your API credentials in each function (replace "your_api_key" and "your_secret_key")
@@ -22,6 +21,19 @@ Important Notes:
 - Request IDs are automatically generated using common.GenerateSpotId()
 - SOR orders provide information about whether Smart Order Routing was used
 - Commission rate computation can be enabled for SOR test orders
+
+Shared helpers:
+The boilerplate that every example repeats (testnet setup, credential validation,
+service-creation guards, request-ID generation, error reporting, and waiting for a
+response) lives in a handful of small helpers so that each example below can focus on
+the part that actually differs: how its request is built.
+
+  - setupExampleClient() (in config.go) - testnet setup, validation, client creation
+  - runSyncExample()                     - the synchronous SyncDo flow
+  - runAsyncExample() + waitForWsResponse() - the asynchronous Do + channel flow
+
+Each helper is intentionally tiny and self-contained, so copying any single example
+function and tweaking its request is still all it takes to get started.
 
 Example Usage:
 
@@ -42,25 +54,84 @@ import (
 	"github.com/adshao/go-binance/v2/common"
 )
 
-// OrderListPlaceOCO demonstrates creating an OCO order using WebSocket API
-func OrderListPlaceOCO() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
-
-	// Validate configuration
-	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
-		return
+// runSyncExample wires together the steps shared by every synchronous order-list
+// example: it guards against a failed service creation, generates a request ID,
+// invokes SyncDo through the supplied closure, and reports any error. On success it
+// returns the typed response so the caller can print exactly what it cares about.
+//
+// The closure keeps the call site readable while letting Go infer the response type:
+//
+//	response, ok := runSyncExample("OTO", err, func(requestID string) (*binance.CreateOrderListWsResponse, error) {
+//		return service.SyncDo(requestID, request)
+//	})
+func runSyncExample[Resp any](label string, serviceErr error, do func(requestID string) (Resp, error)) (Resp, bool) {
+	var zero Resp
+	if serviceErr != nil {
+		fmt.Printf("Error creating %s service: %v\n", label, serviceErr)
+		return zero, false
 	}
 
-	client := AppConfig.GetClient()
+	requestID := common.GenerateSpotId()
+	response, err := do(requestID)
+	if err != nil {
+		fmt.Printf("Error during %s request: %v\n", label, err)
+		return zero, false
+	}
+	return response, true
+}
+
+// runAsyncExample wires together the steps shared by an asynchronous order-list
+// example: it guards against a failed service creation, generates a request ID, and
+// invokes Do through the supplied closure, reporting any error. On success it returns
+// the request ID so the caller can wait for the matching response.
+func runAsyncExample(label string, serviceErr error, do func(requestID string) error) (string, bool) {
+	if serviceErr != nil {
+		fmt.Printf("Error creating %s service: %v\n", label, serviceErr)
+		return "", false
+	}
+
+	requestID := common.GenerateSpotId()
+	if err := do(requestID); err != nil {
+		fmt.Printf("Error during %s request: %v\n", label, err)
+		return "", false
+	}
+	return requestID, true
+}
+
+// asyncWsService is the subset of an asynchronous WebSocket service that
+// waitForWsResponse needs in order to read a response and then shut down cleanly.
+type asyncWsService interface {
+	GetReadChannel() <-chan []byte
+	GetReadErrorChannel() <-chan error
+	ReceiveAllDataBeforeStop(timeout time.Duration)
+}
+
+// waitForWsResponse listens for the first message (or error) on an asynchronous
+// service's channels, prints it, and then drains any remaining data before stopping.
+// It blocks for up to wait while the listener runs.
+func waitForWsResponse(label string, service asyncWsService, wait time.Duration) {
+	go func() {
+		select {
+		case response := <-service.GetReadChannel():
+			fmt.Printf("%s Response: %s\n", label, string(response))
+		case err := <-service.GetReadErrorChannel():
+			fmt.Printf("%s Error: %v\n", label, err)
+		}
+	}()
+
+	time.Sleep(wait)
+	service.ReceiveAllDataBeforeStop(2 * time.Second)
+}
+
+// OrderListPlaceOCO demonstrates creating an OCO order using WebSocket API
+func OrderListPlaceOCO() {
+	client, ok := setupExampleClient()
+	if !ok {
+		return
+	}
 
 	// Create OCO WebSocket service
 	service, err := client.NewOrderListCreateWsService()
-	if err != nil {
-		fmt.Printf("Error creating OCO service: %v\n", err)
-		return
-	}
 
 	// Create OCO order request
 	request := binance.NewOrderListCreateWsRequest().
@@ -77,54 +148,29 @@ func OrderListPlaceOCO() {
 		BelowTimeInForce(binance.TimeInForceTypeGTC).
 		NewOrderRespType(binance.NewOrderRespTypeFULL)
 
-	requestID := common.GenerateSpotId()
-
 	// Send async request
-	err = service.Do(requestID, request)
-	if err != nil {
-		fmt.Printf("Error placing OCO order: %v\n", err)
+	requestID, ok := runAsyncExample("OCO", err, func(requestID string) error {
+		return service.Do(requestID, request)
+	})
+	if !ok {
 		return
 	}
 
 	fmt.Printf("OCO order sent with request ID: %s\n", requestID)
 
-	// Listen for response
-	go func() {
-		for {
-			select {
-			case response := <-service.GetReadChannel():
-				fmt.Printf("OCO Response: %s\n", string(response))
-				return
-			case err := <-service.GetReadErrorChannel():
-				fmt.Printf("OCO Error: %v\n", err)
-				return
-			}
-		}
-	}()
-
-	time.Sleep(5 * time.Second)
-	service.ReceiveAllDataBeforeStop(2 * time.Second)
+	// Listen for the response, then stop cleanly
+	waitForWsResponse("OCO", service, 5*time.Second)
 }
 
 // OrderListPlaceOTO demonstrates creating an OTO order using WebSocket API
 func OrderListPlaceOTO() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
-
-	// Validate configuration
-	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+	client, ok := setupExampleClient()
+	if !ok {
 		return
 	}
-
-	client := AppConfig.GetClient()
 
 	// Create OTO WebSocket service
 	service, err := client.NewOrderListPlaceOtoWsService()
-	if err != nil {
-		fmt.Printf("Error creating OTO service: %v\n", err)
-		return
-	}
 
 	// Create OTO order request
 	request := binance.NewOrderListPlaceOtoWsRequest().
@@ -140,12 +186,11 @@ func OrderListPlaceOTO() {
 		PendingPrice("32000").
 		PendingQuantity("0.001")
 
-	requestID := common.GenerateSpotId()
-
 	// Send synchronous request
-	response, err := service.SyncDo(requestID, request)
-	if err != nil {
-		fmt.Printf("Error placing OTO order: %v\n", err)
+	response, ok := runSyncExample("OTO", err, func(requestID string) (*binance.CreateOrderListWsResponse, error) {
+		return service.SyncDo(requestID, request)
+	})
+	if !ok {
 		return
 	}
 
@@ -154,23 +199,13 @@ func OrderListPlaceOTO() {
 
 // OrderListPlaceOTOCO demonstrates creating an OTOCO order using WebSocket API
 func OrderListPlaceOTOCO() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
-
-	// Validate configuration
-	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+	client, ok := setupExampleClient()
+	if !ok {
 		return
 	}
-
-	client := AppConfig.GetClient()
 
 	// Create OTOCO WebSocket service
 	service, err := client.NewOrderListPlaceOtocoWsService()
-	if err != nil {
-		fmt.Printf("Error creating OTOCO service: %v\n", err)
-		return
-	}
 
 	// Create OTOCO order request
 	request := binance.NewOrderListPlaceOtocoWsRequest().
@@ -188,12 +223,11 @@ func OrderListPlaceOTOCO() {
 		PendingBelowStopPrice("28000").
 		ListClientOrderID("testOTOCOList")
 
-	requestID := common.GenerateSpotId()
-
 	// Send synchronous request
-	response, err := service.SyncDo(requestID, request)
-	if err != nil {
-		fmt.Printf("Error placing OTOCO order: %v\n", err)
+	response, ok := runSyncExample("OTOCO", err, func(requestID string) (*binance.CreateOrderListWsResponse, error) {
+		return service.SyncDo(requestID, request)
+	})
+	if !ok {
 		return
 	}
 
@@ -202,35 +236,24 @@ func OrderListPlaceOTOCO() {
 
 // OrderListCancel demonstrates canceling an order list using WebSocket API
 func OrderListCancel() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
-
-	// Validate configuration
-	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+	client, ok := setupExampleClient()
+	if !ok {
 		return
 	}
-
-	client := AppConfig.GetClient()
 
 	// Create order list cancel WebSocket service
 	service, err := client.NewOrderListCancelWsService()
-	if err != nil {
-		fmt.Printf("Error creating cancel service: %v\n", err)
-		return
-	}
 
 	// Create cancel request
 	request := binance.NewOrderListCancelWsRequest().
 		Symbol("BTCUSDT").
 		OrderListID(123456789) // Replace with actual order list ID
 
-	requestID := common.GenerateSpotId()
-
 	// Send synchronous request
-	response, err := service.SyncDo(requestID, request)
-	if err != nil {
-		fmt.Printf("Error canceling order list: %v\n", err)
+	response, ok := runSyncExample("Cancel Order List", err, func(requestID string) (*binance.CancelOrderListWsResponse, error) {
+		return service.SyncDo(requestID, request)
+	})
+	if !ok {
 		return
 	}
 
@@ -239,23 +262,13 @@ func OrderListCancel() {
 
 // SorOrderPlace demonstrates placing a SOR order using WebSocket API
 func SorOrderPlace() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
-
-	// Validate configuration
-	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+	client, ok := setupExampleClient()
+	if !ok {
 		return
 	}
-
-	client := AppConfig.GetClient()
 
 	// Create SOR order placement WebSocket service
 	service, err := client.NewSorOrderPlaceWsService()
-	if err != nil {
-		fmt.Printf("Error creating SOR service: %v\n", err)
-		return
-	}
 
 	// Create SOR order request - using ETHUSDT as it has SOR support
 	request := binance.NewSorOrderPlaceWsRequest().
@@ -268,12 +281,11 @@ func SorOrderPlace() {
 		NewClientOrderID("sBI1KM6nNtOfj5tccZSKly").
 		NewOrderRespType(binance.NewOrderRespTypeFULL)
 
-	requestID := common.GenerateSpotId()
-
 	// Send synchronous request
-	response, err := service.SyncDo(requestID, request)
-	if err != nil {
-		fmt.Printf("Error placing SOR order: %v\n", err)
+	response, ok := runSyncExample("SOR Place", err, func(requestID string) (*binance.SorOrderPlaceWsResponse, error) {
+		return service.SyncDo(requestID, request)
+	})
+	if !ok {
 		return
 	}
 
@@ -289,23 +301,13 @@ func SorOrderPlace() {
 
 // SorOrderTest demonstrates testing a SOR order using WebSocket API
 func SorOrderTest() {
-	// Setup configuration
-	AppConfig.SetupTestnet()
-
-	// Validate configuration
-	if err := AppConfig.Validate(); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
+	client, ok := setupExampleClient()
+	if !ok {
 		return
 	}
-
-	client := AppConfig.GetClient()
 
 	// Create SOR order test WebSocket service
 	service, err := client.NewSorOrderTestWsService()
-	if err != nil {
-		fmt.Printf("Error creating SOR test service: %v\n", err)
-		return
-	}
 
 	// Create SOR test request with commission rates - using ETHUSDT for SOR support
 	request := binance.NewSorOrderTestWsRequest().
@@ -317,12 +319,11 @@ func SorOrderTest() {
 		TimeInForce(binance.TimeInForceTypeGTC).
 		ComputeCommissionRates(true)
 
-	requestID := common.GenerateSpotId()
-
 	// Send synchronous request
-	response, err := service.SyncDo(requestID, request)
-	if err != nil {
-		fmt.Printf("Error testing SOR order: %v\n", err)
+	response, ok := runSyncExample("SOR Test", err, func(requestID string) (*binance.SorOrderTestWsResponse, error) {
+		return service.SyncDo(requestID, request)
+	})
+	if !ok {
 		return
 	}
 
