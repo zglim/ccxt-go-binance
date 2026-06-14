@@ -30,10 +30,12 @@ func (s *sorOrderPlaceServiceWsTestSuite) SetupTest() {
 	s.client = mock.NewMockClient(s.ctrl)
 
 	s.sorOrderPlace = &SorOrderPlaceWsService{
-		c:         s.client,
-		ApiKey:    s.apiKey,
-		SecretKey: s.secretKey,
-		KeyType:   s.signedKey,
+		spotWsApiService: spotWsApiService{
+			c:         s.client,
+			ApiKey:    s.apiKey,
+			SecretKey: s.secretKey,
+			KeyType:   s.signedKey,
+		},
 	}
 
 	s.sorOrderPlaceRequest = NewSorOrderPlaceWsRequest().
@@ -229,10 +231,12 @@ func (s *sorOrderPlaceServiceWsTestSuite) TestSorOrderPlaceSync_EmptySignKeyType
 
 func (s *sorOrderPlaceServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {
 	s.sorOrderPlace = &SorOrderPlaceWsService{
-		c:          s.client,
-		ApiKey:     apiKey,
-		SecretKey:  secretKey,
-		KeyType:    signKeyType,
-		TimeOffset: timeOffset,
+		spotWsApiService: spotWsApiService{
+			c:          s.client,
+			ApiKey:     apiKey,
+			SecretKey:  secretKey,
+			KeyType:    signKeyType,
+			TimeOffset: timeOffset,
+		},
 	}
 }

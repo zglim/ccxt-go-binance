@@ -2,7 +2,6 @@ package binance
 
 import (
 	"encoding/json"
-	"time"
 
 	"github.com/adshao/go-binance/v2/common"
 	"github.com/adshao/go-binance/v2/common/websocket"
@@ -10,30 +9,18 @@ import (
 
 // OrderListPlaceWsService creates order list (deprecated OCO)
 type OrderListPlaceWsService struct {
-	c          websocket.Client
-	ApiKey     string
-	SecretKey  string
-	KeyType    string
-	TimeOffset int64
+	spotWsApiService
 }
 
 // NewOrderListPlaceWsService init OrderListPlaceWsService
 func NewOrderListPlaceWsService(apiKey, secretKey string) (*OrderListPlaceWsService, error) {
-	conn, err := websocket.NewConnection(WsApiInitReadWriteConn, WebsocketKeepalive, WebsocketTimeoutReadWriteConnection)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := websocket.NewClient(conn)
+	base, err := newSpotWsApiService(apiKey, secretKey)
 	if err != nil {
 		return nil, err
 	}
 
 	return &OrderListPlaceWsService{
-		c:         client,
-		ApiKey:    apiKey,
-		SecretKey: secretKey,
-		KeyType:   common.KeyTypeHmac,
+		spotWsApiService: *base,
 	}, nil
 }
 
@@ -137,46 +124,12 @@ func (s *OrderListPlaceWsRequest) buildParams() params {
 
 // Do - sends 'orderList.place' request
 func (s *OrderListPlaceWsService) Do(requestID string, request *OrderListPlaceWsRequest) error {
-	rawData, err := websocket.CreateRequest(
-		websocket.NewRequestData(
-			requestID,
-			s.ApiKey,
-			s.SecretKey,
-			s.TimeOffset,
-			s.KeyType,
-		),
-		websocket.OrderListPlaceSpotWsApiMethod,
-		request.buildParams(),
-	)
-	if err != nil {
-		return err
-	}
-
-	if err := s.c.Write(requestID, rawData); err != nil {
-		return err
-	}
-
-	return nil
+	return s.sendRequest(requestID, websocket.OrderListPlaceSpotWsApiMethod, request.buildParams())
 }
 
 // SyncDo - sends 'orderList.place' request and receives response
 func (s *OrderListPlaceWsService) SyncDo(requestID string, request *OrderListPlaceWsRequest) (*CreateOrderListWsResponse, error) {
-	rawData, err := websocket.CreateRequest(
-		websocket.NewRequestData(
-			requestID,
-			s.ApiKey,
-			s.SecretKey,
-			s.TimeOffset,
-			s.KeyType,
-		),
-		websocket.OrderListPlaceSpotWsApiMethod,
-		request.buildParams(),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := s.c.WriteSync(requestID, rawData, websocket.WriteSyncWsTimeout)
+	response, err := s.sendSyncRequest(requestID, websocket.OrderListPlaceSpotWsApiMethod, request.buildParams())
 	if err != nil {
 		return nil, err
 	}
@@ -187,26 +140,6 @@ func (s *OrderListPlaceWsService) SyncDo(requestID string, request *OrderListPla
 	}
 
 	return createOrderListWsResponse, nil
-}
-
-// ReceiveAllDataBeforeStop waits until all responses will be received from websocket until timeout expired
-func (s *OrderListPlaceWsService) ReceiveAllDataBeforeStop(timeout time.Duration) {
-	s.c.Wait(timeout)
-}
-
-// GetReadChannel returns channel with API response data (including API errors)
-func (s *OrderListPlaceWsService) GetReadChannel() <-chan []byte {
-	return s.c.GetReadChannel()
-}
-
-// GetReadErrorChannel returns channel with errors which are occurred while reading websocket connection
-func (s *OrderListPlaceWsService) GetReadErrorChannel() <-chan error {
-	return s.c.GetReadErrorChannel()
-}
-
-// GetReconnectCount returns count of reconnect attempts by client
-func (s *OrderListPlaceWsService) GetReconnectCount() int64 {
-	return s.c.GetReconnectCount()
 }
 
 // Symbol set symbol

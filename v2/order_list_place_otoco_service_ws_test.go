@@ -36,10 +36,12 @@ func (s *orderListPlaceOtocoServiceWsTestSuite) SetupTest() {
 	s.client = mock.NewMockClient(s.ctrl)
 
 	s.orderListPlaceOtoco = &OrderListPlaceOtocoWsService{
-		c:         s.client,
-		ApiKey:    s.apiKey,
-		SecretKey: s.secretKey,
-		KeyType:   s.signedKey,
+		spotWsApiService: spotWsApiService{
+			c:         s.client,
+			ApiKey:    s.apiKey,
+			SecretKey: s.secretKey,
+			KeyType:   s.signedKey,
+		},
 	}
 
 	s.orderListPlaceOtocoRequest = NewOrderListPlaceOtocoWsRequest().
@@ -225,10 +227,12 @@ func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtocoSync_Empt
 
 func (s *orderListPlaceOtocoServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {
 	s.orderListPlaceOtoco = &OrderListPlaceOtocoWsService{
-		c:          s.client,
-		ApiKey:     apiKey,
-		SecretKey:  secretKey,
-		KeyType:    signKeyType,
-		TimeOffset: timeOffset,
+		spotWsApiService: spotWsApiService{
+			c:          s.client,
+			ApiKey:     apiKey,
+			SecretKey:  secretKey,
+			KeyType:    signKeyType,
+			TimeOffset: timeOffset,
+		},
 	}
 }

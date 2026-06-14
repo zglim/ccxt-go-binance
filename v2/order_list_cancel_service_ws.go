@@ -2,7 +2,6 @@ package binance
 
 import (
 	"encoding/json"
-	"time"
 
 	"github.com/adshao/go-binance/v2/common"
 	"github.com/adshao/go-binance/v2/common/websocket"
@@ -10,30 +9,18 @@ import (
 
 // OrderListCancelWsService cancels order list
 type OrderListCancelWsService struct {
-	c          websocket.Client
-	ApiKey     string
-	SecretKey  string
-	KeyType    string
-	TimeOffset int64
+	spotWsApiService
 }
 
 // NewOrderListCancelWsService init OrderListCancelWsService
 func NewOrderListCancelWsService(apiKey, secretKey string) (*OrderListCancelWsService, error) {
-	conn, err := websocket.NewConnection(WsApiInitReadWriteConn, WebsocketKeepalive, WebsocketTimeoutReadWriteConnection)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := websocket.NewClient(conn)
+	base, err := newSpotWsApiService(apiKey, secretKey)
 	if err != nil {
 		return nil, err
 	}
 
 	return &OrderListCancelWsService{
-		c:         client,
-		ApiKey:    apiKey,
-		SecretKey: secretKey,
-		KeyType:   common.KeyTypeHmac,
+		spotWsApiService: *base,
 	}, nil
 }
 
@@ -77,46 +64,12 @@ func (s *OrderListCancelWsRequest) buildParams() params {
 
 // Do - sends 'orderList.cancel' request
 func (s *OrderListCancelWsService) Do(requestID string, request *OrderListCancelWsRequest) error {
-	rawData, err := websocket.CreateRequest(
-		websocket.NewRequestData(
-			requestID,
-			s.ApiKey,
-			s.SecretKey,
-			s.TimeOffset,
-			s.KeyType,
-		),
-		websocket.OrderListCancelSpotWsApiMethod,
-		request.buildParams(),
-	)
-	if err != nil {
-		return err
-	}
-
-	if err := s.c.Write(requestID, rawData); err != nil {
-		return err
-	}
-
-	return nil
+	return s.sendRequest(requestID, websocket.OrderListCancelSpotWsApiMethod, request.buildParams())
 }
 
 // SyncDo - sends 'orderList.cancel' request and receives response
 func (s *OrderListCancelWsService) SyncDo(requestID string, request *OrderListCancelWsRequest) (*CancelOrderListWsResponse, error) {
-	rawData, err := websocket.CreateRequest(
-		websocket.NewRequestData(
-			requestID,
-			s.ApiKey,
-			s.SecretKey,
-			s.TimeOffset,
-			s.KeyType,
-		),
-		websocket.OrderListCancelSpotWsApiMethod,
-		request.buildParams(),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := s.c.WriteSync(requestID, rawData, websocket.WriteSyncWsTimeout)
+	response, err := s.sendSyncRequest(requestID, websocket.OrderListCancelSpotWsApiMethod, request.buildParams())
 	if err != nil {
 		return nil, err
 	}
@@ -127,26 +80,6 @@ func (s *OrderListCancelWsService) SyncDo(requestID string, request *OrderListCa
 	}
 
 	return cancelOrderListWsResponse, nil
-}
-
-// ReceiveAllDataBeforeStop waits until all responses will be received from websocket until timeout expired
-func (s *OrderListCancelWsService) ReceiveAllDataBeforeStop(timeout time.Duration) {
-	s.c.Wait(timeout)
-}
-
-// GetReadChannel returns channel with API response data (including API errors)
-func (s *OrderListCancelWsService) GetReadChannel() <-chan []byte {
-	return s.c.GetReadChannel()
-}
-
-// GetReadErrorChannel returns channel with errors which are occurred while reading websocket connection
-func (s *OrderListCancelWsService) GetReadErrorChannel() <-chan error {
-	return s.c.GetReadErrorChannel()
-}
-
-// GetReconnectCount returns count of reconnect attempts by client
-func (s *OrderListCancelWsService) GetReconnectCount() int64 {
-	return s.c.GetReconnectCount()
 }
 
 // Symbol set symbol

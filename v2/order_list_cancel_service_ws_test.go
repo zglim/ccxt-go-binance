@@ -27,10 +27,12 @@ func (s *orderListCancelServiceWsTestSuite) SetupTest() {
 	s.client = mock.NewMockClient(s.ctrl)
 
 	s.orderListCancel = &OrderListCancelWsService{
-		c:         s.client,
-		ApiKey:    s.apiKey,
-		SecretKey: s.secretKey,
-		KeyType:   s.signedKey,
+		spotWsApiService: spotWsApiService{
+			c:         s.client,
+			ApiKey:    s.apiKey,
+			SecretKey: s.secretKey,
+			KeyType:   s.signedKey,
+		},
 	}
 
 	s.orderListCancelRequest = NewOrderListCancelWsRequest().
@@ -196,10 +198,12 @@ func (s *orderListCancelServiceWsTestSuite) TestOrderListCancelSync_EmptySignKey
 
 func (s *orderListCancelServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {
 	s.orderListCancel = &OrderListCancelWsService{
-		c:          s.client,
-		ApiKey:     apiKey,
-		SecretKey:  secretKey,
-		KeyType:    signKeyType,
-		TimeOffset: timeOffset,
+		spotWsApiService: spotWsApiService{
+			c:          s.client,
+			ApiKey:     apiKey,
+			SecretKey:  secretKey,
+			KeyType:    signKeyType,
+			TimeOffset: timeOffset,
+		},
 	}
 }

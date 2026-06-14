@@ -30,10 +30,12 @@ func (s *orderListPlaceDeprecatedServiceWsTestSuite) SetupTest() {
 	s.client = mock.NewMockClient(s.ctrl)
 
 	s.orderListPlace = &OrderListPlaceWsService{
-		c:         s.client,
-		ApiKey:    s.apiKey,
-		SecretKey: s.secretKey,
-		KeyType:   s.signedKey,
+		spotWsApiService: spotWsApiService{
+			c:         s.client,
+			ApiKey:    s.apiKey,
+			SecretKey: s.secretKey,
+			KeyType:   s.signedKey,
+		},
 	}
 
 	s.orderListPlaceRequest = NewOrderListPlaceWsRequest().
@@ -206,10 +208,12 @@ func (s *orderListPlaceDeprecatedServiceWsTestSuite) TestOrderListPlaceSync_Empt
 
 func (s *orderListPlaceDeprecatedServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {
 	s.orderListPlace = &OrderListPlaceWsService{
-		c:          s.client,
-		ApiKey:     apiKey,
-		SecretKey:  secretKey,
-		KeyType:    signKeyType,
-		TimeOffset: timeOffset,
+		spotWsApiService: spotWsApiService{
+			c:          s.client,
+			ApiKey:     apiKey,
+			SecretKey:  secretKey,
+			KeyType:    signKeyType,
+			TimeOffset: timeOffset,
+		},
 	}
 }

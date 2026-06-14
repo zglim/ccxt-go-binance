@@ -2,7 +2,6 @@ package binance
 
 import (
 	"encoding/json"
-	"time"
 
 	"github.com/adshao/go-binance/v2/common"
 	"github.com/adshao/go-binance/v2/common/websocket"
@@ -10,30 +9,18 @@ import (
 
 // SorOrderPlaceWsService places order using SOR
 type SorOrderPlaceWsService struct {
-	c          websocket.Client
-	ApiKey     string
-	SecretKey  string
-	KeyType    string
-	TimeOffset int64
+	spotWsApiService
 }
 
 // NewSorOrderPlaceWsService init SorOrderPlaceWsService
 func NewSorOrderPlaceWsService(apiKey, secretKey string) (*SorOrderPlaceWsService, error) {
-	conn, err := websocket.NewConnection(WsApiInitReadWriteConn, WebsocketKeepalive, WebsocketTimeoutReadWriteConnection)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := websocket.NewClient(conn)
+	base, err := newSpotWsApiService(apiKey, secretKey)
 	if err != nil {
 		return nil, err
 	}
 
 	return &SorOrderPlaceWsService{
-		c:         client,
-		ApiKey:    apiKey,
-		SecretKey: secretKey,
-		KeyType:   common.KeyTypeHmac,
+		spotWsApiService: *base,
 	}, nil
 }
 
@@ -105,46 +92,12 @@ func (s *SorOrderPlaceWsRequest) buildParams() params {
 
 // Do - sends 'sor.order.place' request
 func (s *SorOrderPlaceWsService) Do(requestID string, request *SorOrderPlaceWsRequest) error {
-	rawData, err := websocket.CreateRequest(
-		websocket.NewRequestData(
-			requestID,
-			s.ApiKey,
-			s.SecretKey,
-			s.TimeOffset,
-			s.KeyType,
-		),
-		websocket.SorOrderPlaceSpotWsApiMethod,
-		request.buildParams(),
-	)
-	if err != nil {
-		return err
-	}
-
-	if err := s.c.Write(requestID, rawData); err != nil {
-		return err
-	}
-
-	return nil
+	return s.sendRequest(requestID, websocket.SorOrderPlaceSpotWsApiMethod, request.buildParams())
 }
 
 // SyncDo - sends 'sor.order.place' request and receives response
 func (s *SorOrderPlaceWsService) SyncDo(requestID string, request *SorOrderPlaceWsRequest) (*SorOrderPlaceWsResponse, error) {
-	rawData, err := websocket.CreateRequest(
-		websocket.NewRequestData(
-			requestID,
-			s.ApiKey,
-			s.SecretKey,
-			s.TimeOffset,
-			s.KeyType,
-		),
-		websocket.SorOrderPlaceSpotWsApiMethod,
-		request.buildParams(),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := s.c.WriteSync(requestID, rawData, websocket.WriteSyncWsTimeout)
+	response, err := s.sendSyncRequest(requestID, websocket.SorOrderPlaceSpotWsApiMethod, request.buildParams())
 	if err != nil {
 		return nil, err
 	}
@@ -155,26 +108,6 @@ func (s *SorOrderPlaceWsService) SyncDo(requestID string, request *SorOrderPlace
 	}
 
 	return sorOrderPlaceWsResponse, nil
-}
-
-// ReceiveAllDataBeforeStop waits until all responses will be received from websocket until timeout expired
-func (s *SorOrderPlaceWsService) ReceiveAllDataBeforeStop(timeout time.Duration) {
-	s.c.Wait(timeout)
-}
-
-// GetReadChannel returns channel with API response data (including API errors)
-func (s *SorOrderPlaceWsService) GetReadChannel() <-chan []byte {
-	return s.c.GetReadChannel()
-}
-
-// GetReadErrorChannel returns channel with errors which are occurred while reading websocket connection
-func (s *SorOrderPlaceWsService) GetReadErrorChannel() <-chan error {
-	return s.c.GetReadErrorChannel()
-}
-
-// GetReconnectCount returns count of reconnect attempts by client
-func (s *SorOrderPlaceWsService) GetReconnectCount() int64 {
-	return s.c.GetReconnectCount()
 }
 
 // Symbol set symbol
