@@ -2,22 +2,14 @@ package binance
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 
-	"github.com/adshao/go-binance/v2/common/websocket"
-	"github.com/adshao/go-binance/v2/common/websocket/mock"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 )
 
 func (s *orderListPlaceOtocoServiceWsTestSuite) SetupTest() {
-	s.apiKey = "dummyApiKey"
-	s.secretKey = "dummySecretKey"
-	s.signedKey = "HMAC"
-	s.timeOffset = 0
-
-	s.requestID = "1712544408508"
+	s.setup("1712544408508")
 
 	s.symbol = "LTCBNB"
 	s.workingType = OrderTypeLimit
@@ -31,9 +23,6 @@ func (s *orderListPlaceOtocoServiceWsTestSuite) SetupTest() {
 	s.pendingBelowType = OrderTypeLimitMaker
 	s.pendingBelowPrice = "5"
 	s.listClientOrderID = "testOTOCOList"
-
-	s.ctrl = gomock.NewController(s.T())
-	s.client = mock.NewMockClient(s.ctrl)
 
 	s.orderListPlaceOtoco = &OrderListPlaceOtocoWsService{
 		c:         s.client,
@@ -58,21 +47,9 @@ func (s *orderListPlaceOtocoServiceWsTestSuite) SetupTest() {
 		NewOrderRespType(NewOrderRespTypeRESULT)
 }
 
-func (s *orderListPlaceOtocoServiceWsTestSuite) TearDownTest() {
-	s.ctrl.Finish()
-}
-
 type orderListPlaceOtocoServiceWsTestSuite struct {
-	suite.Suite
-	apiKey     string
-	secretKey  string
-	signedKey  string
-	timeOffset int64
+	baseOrderWsServiceTestSuite
 
-	ctrl   *gomock.Controller
-	client *mock.MockClient
-
-	requestID             string
 	symbol                string
 	workingType           OrderType
 	workingSide           SideType
@@ -103,40 +80,10 @@ func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtoco() {
 	s.NoError(err)
 }
 
-func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtoco_EmptyRequestID() {
-	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().Write(gomock.Any(), gomock.Any()).Return(nil).Times(0)
-
-	err := s.orderListPlaceOtoco.Do("", s.orderListPlaceOtocoRequest)
-	s.ErrorIs(err, websocket.ErrorRequestIDNotSet)
-}
-
-func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtoco_EmptyApiKey() {
-	s.reset("", s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().Write(s.requestID, gomock.Any()).Return(nil).Times(0)
-
-	err := s.orderListPlaceOtoco.Do(s.requestID, s.orderListPlaceOtocoRequest)
-	s.ErrorIs(err, websocket.ErrorApiKeyIsNotSet)
-}
-
-func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtoco_EmptySecretKey() {
-	s.reset(s.apiKey, "", s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().Write(s.requestID, gomock.Any()).Return(nil).Times(0)
-
-	err := s.orderListPlaceOtoco.Do(s.requestID, s.orderListPlaceOtocoRequest)
-	s.ErrorIs(err, websocket.ErrorSecretKeyIsNotSet)
-}
-
-func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtoco_EmptySignKeyType() {
-	s.reset(s.apiKey, s.secretKey, "", s.timeOffset)
-
-	s.client.EXPECT().Write(s.requestID, gomock.Any()).Return(nil).Times(0)
-
-	err := s.orderListPlaceOtoco.Do(s.requestID, s.orderListPlaceOtocoRequest)
-	s.Error(err)
+func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtoco_CredentialErrors() {
+	s.runDoCredentialChecks(s.reset, func(requestID string) error {
+		return s.orderListPlaceOtoco.Do(requestID, s.orderListPlaceOtocoRequest)
+	})
 }
 
 func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtocoSync() {
@@ -178,49 +125,12 @@ func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtocoSync() {
 	s.Equal("OTO", response.Result.ContingencyType)
 }
 
-func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtocoSync_EmptyRequestID() {
-	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	req := s.orderListPlaceOtocoRequest
-	response, err := s.orderListPlaceOtoco.SyncDo("", req)
-	s.Nil(response)
-	s.ErrorIs(err, websocket.ErrorRequestIDNotSet)
-}
-
-func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtocoSync_EmptyApiKey() {
-	s.reset("", s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	response, err := s.orderListPlaceOtoco.SyncDo(s.requestID, s.orderListPlaceOtocoRequest)
-	s.Nil(response)
-	s.ErrorIs(err, websocket.ErrorApiKeyIsNotSet)
-}
-
-func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtocoSync_EmptySecretKey() {
-	s.reset(s.apiKey, "", s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	response, err := s.orderListPlaceOtoco.SyncDo(s.requestID, s.orderListPlaceOtocoRequest)
-	s.Nil(response)
-	s.ErrorIs(err, websocket.ErrorSecretKeyIsNotSet)
-}
-
-func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtocoSync_EmptySignKeyType() {
-	s.reset(s.apiKey, s.secretKey, "", s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	response, err := s.orderListPlaceOtoco.SyncDo(s.requestID, s.orderListPlaceOtocoRequest)
-	s.Nil(response)
-	s.Error(err)
+func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtocoSync_CredentialErrors() {
+	s.runSyncDoCredentialChecks(s.reset, func(requestID string) error {
+		response, err := s.orderListPlaceOtoco.SyncDo(requestID, s.orderListPlaceOtocoRequest)
+		s.Nil(response)
+		return err
+	})
 }
 
 func (s *orderListPlaceOtocoServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {

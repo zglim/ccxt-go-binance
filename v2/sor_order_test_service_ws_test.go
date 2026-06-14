@@ -2,22 +2,14 @@ package binance
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 
-	"github.com/adshao/go-binance/v2/common/websocket"
-	"github.com/adshao/go-binance/v2/common/websocket/mock"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 )
 
 func (s *sorOrderTestServiceWsTestSuite) SetupTest() {
-	s.apiKey = "dummyApiKey"
-	s.secretKey = "dummySecretKey"
-	s.signedKey = "HMAC"
-	s.timeOffset = 0
-
-	s.requestID = "3a4437e2-41a3-4c19-897c-9cadc5dce8b6"
+	s.setup("3a4437e2-41a3-4c19-897c-9cadc5dce8b6")
 
 	s.symbol = "BTCUSDT"
 	s.side = SideTypeBuy
@@ -25,9 +17,6 @@ func (s *sorOrderTestServiceWsTestSuite) SetupTest() {
 	s.quantity = "0.1"
 	s.price = "0.1"
 	s.computeCommissionRates = false
-
-	s.ctrl = gomock.NewController(s.T())
-	s.client = mock.NewMockClient(s.ctrl)
 
 	s.sorOrderTest = &SorOrderTestWsService{
 		c:         s.client,
@@ -45,21 +34,9 @@ func (s *sorOrderTestServiceWsTestSuite) SetupTest() {
 		ComputeCommissionRates(s.computeCommissionRates)
 }
 
-func (s *sorOrderTestServiceWsTestSuite) TearDownTest() {
-	s.ctrl.Finish()
-}
-
 type sorOrderTestServiceWsTestSuite struct {
-	suite.Suite
-	apiKey     string
-	secretKey  string
-	signedKey  string
-	timeOffset int64
+	baseOrderWsServiceTestSuite
 
-	ctrl   *gomock.Controller
-	client *mock.MockClient
-
-	requestID              string
 	symbol                 string
 	side                   SideType
 	orderType              OrderType
@@ -84,40 +61,10 @@ func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTest() {
 	s.NoError(err)
 }
 
-func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTest_EmptyRequestID() {
-	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().Write(gomock.Any(), gomock.Any()).Return(nil).Times(0)
-
-	err := s.sorOrderTest.Do("", s.sorOrderTestRequest)
-	s.ErrorIs(err, websocket.ErrorRequestIDNotSet)
-}
-
-func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTest_EmptyApiKey() {
-	s.reset("", s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().Write(s.requestID, gomock.Any()).Return(nil).Times(0)
-
-	err := s.sorOrderTest.Do(s.requestID, s.sorOrderTestRequest)
-	s.ErrorIs(err, websocket.ErrorApiKeyIsNotSet)
-}
-
-func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTest_EmptySecretKey() {
-	s.reset(s.apiKey, "", s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().Write(s.requestID, gomock.Any()).Return(nil).Times(0)
-
-	err := s.sorOrderTest.Do(s.requestID, s.sorOrderTestRequest)
-	s.ErrorIs(err, websocket.ErrorSecretKeyIsNotSet)
-}
-
-func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTest_EmptySignKeyType() {
-	s.reset(s.apiKey, s.secretKey, "", s.timeOffset)
-
-	s.client.EXPECT().Write(s.requestID, gomock.Any()).Return(nil).Times(0)
-
-	err := s.sorOrderTest.Do(s.requestID, s.sorOrderTestRequest)
-	s.Error(err)
+func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTest_CredentialErrors() {
+	s.runDoCredentialChecks(s.reset, func(requestID string) error {
+		return s.sorOrderTest.Do(requestID, s.sorOrderTestRequest)
+	})
 }
 
 func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTestSync_WithoutCommissionRates() {
@@ -192,49 +139,12 @@ func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTestSync_WithCommissionRate
 	s.Equal("BNB", response.Result.Discount.DiscountAsset)
 }
 
-func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTestSync_EmptyRequestID() {
-	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	req := s.sorOrderTestRequest
-	response, err := s.sorOrderTest.SyncDo("", req)
-	s.Nil(response)
-	s.ErrorIs(err, websocket.ErrorRequestIDNotSet)
-}
-
-func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTestSync_EmptyApiKey() {
-	s.reset("", s.secretKey, s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	response, err := s.sorOrderTest.SyncDo(s.requestID, s.sorOrderTestRequest)
-	s.Nil(response)
-	s.ErrorIs(err, websocket.ErrorApiKeyIsNotSet)
-}
-
-func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTestSync_EmptySecretKey() {
-	s.reset(s.apiKey, "", s.signedKey, s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	response, err := s.sorOrderTest.SyncDo(s.requestID, s.sorOrderTestRequest)
-	s.Nil(response)
-	s.ErrorIs(err, websocket.ErrorSecretKeyIsNotSet)
-}
-
-func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTestSync_EmptySignKeyType() {
-	s.reset(s.apiKey, s.secretKey, "", s.timeOffset)
-
-	s.client.EXPECT().
-		WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("write sync: error")).Times(0)
-
-	response, err := s.sorOrderTest.SyncDo(s.requestID, s.sorOrderTestRequest)
-	s.Nil(response)
-	s.Error(err)
+func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTestSync_CredentialErrors() {
+	s.runSyncDoCredentialChecks(s.reset, func(requestID string) error {
+		response, err := s.sorOrderTest.SyncDo(requestID, s.sorOrderTestRequest)
+		s.Nil(response)
+		return err
+	})
 }
 
 func (s *sorOrderTestServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {
