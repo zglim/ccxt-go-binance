@@ -1,40 +1,23 @@
 package binance
 
 import (
-	"encoding/json"
-	"time"
-
 	"github.com/adshao/go-binance/v2/common"
 	"github.com/adshao/go-binance/v2/common/websocket"
 )
 
 // OrderListPlaceOtocoWsService creates OTOCO order list
 type OrderListPlaceOtocoWsService struct {
-	c          websocket.Client
-	ApiKey     string
-	SecretKey  string
-	KeyType    string
-	TimeOffset int64
+	spotWsService
 }
 
 // NewOrderListPlaceOtocoWsService init OrderListPlaceOtocoWsService
 func NewOrderListPlaceOtocoWsService(apiKey, secretKey string) (*OrderListPlaceOtocoWsService, error) {
-	conn, err := websocket.NewConnection(WsApiInitReadWriteConn, WebsocketKeepalive, WebsocketTimeoutReadWriteConnection)
+	base, err := newSpotWsService(apiKey, secretKey)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := websocket.NewClient(conn)
-	if err != nil {
-		return nil, err
-	}
-
-	return &OrderListPlaceOtocoWsService{
-		c:         client,
-		ApiKey:    apiKey,
-		SecretKey: secretKey,
-		KeyType:   common.KeyTypeHmac,
-	}, nil
+	return &OrderListPlaceOtocoWsService{spotWsService: base}, nil
 }
 
 // OrderListPlaceOtocoWsRequest parameters for 'orderList.place.otoco' websocket API
@@ -187,76 +170,12 @@ func (s *OrderListPlaceOtocoWsRequest) buildParams() params {
 
 // Do - sends 'orderList.place.otoco' request
 func (s *OrderListPlaceOtocoWsService) Do(requestID string, request *OrderListPlaceOtocoWsRequest) error {
-	rawData, err := websocket.CreateRequest(
-		websocket.NewRequestData(
-			requestID,
-			s.ApiKey,
-			s.SecretKey,
-			s.TimeOffset,
-			s.KeyType,
-		),
-		websocket.OrderListPlaceOtocoSpotWsApiMethod,
-		request.buildParams(),
-	)
-	if err != nil {
-		return err
-	}
-
-	if err := s.c.Write(requestID, rawData); err != nil {
-		return err
-	}
-
-	return nil
+	return s.do(requestID, websocket.OrderListPlaceOtocoSpotWsApiMethod, request.buildParams())
 }
 
 // SyncDo - sends 'orderList.place.otoco' request and receives response
 func (s *OrderListPlaceOtocoWsService) SyncDo(requestID string, request *OrderListPlaceOtocoWsRequest) (*CreateOrderListWsResponse, error) {
-	rawData, err := websocket.CreateRequest(
-		websocket.NewRequestData(
-			requestID,
-			s.ApiKey,
-			s.SecretKey,
-			s.TimeOffset,
-			s.KeyType,
-		),
-		websocket.OrderListPlaceOtocoSpotWsApiMethod,
-		request.buildParams(),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := s.c.WriteSync(requestID, rawData, websocket.WriteSyncWsTimeout)
-	if err != nil {
-		return nil, err
-	}
-
-	createOrderListWsResponse := &CreateOrderListWsResponse{}
-	if err := json.Unmarshal(response, createOrderListWsResponse); err != nil {
-		return nil, err
-	}
-
-	return createOrderListWsResponse, nil
-}
-
-// ReceiveAllDataBeforeStop waits until all responses will be received from websocket until timeout expired
-func (s *OrderListPlaceOtocoWsService) ReceiveAllDataBeforeStop(timeout time.Duration) {
-	s.c.Wait(timeout)
-}
-
-// GetReadChannel returns channel with API response data (including API errors)
-func (s *OrderListPlaceOtocoWsService) GetReadChannel() <-chan []byte {
-	return s.c.GetReadChannel()
-}
-
-// GetReadErrorChannel returns channel with errors which are occurred while reading websocket connection
-func (s *OrderListPlaceOtocoWsService) GetReadErrorChannel() <-chan error {
-	return s.c.GetReadErrorChannel()
-}
-
-// GetReconnectCount returns count of reconnect attempts by client
-func (s *OrderListPlaceOtocoWsService) GetReconnectCount() int64 {
-	return s.c.GetReconnectCount()
+	return spotWsSyncDo[CreateOrderListWsResponse](&s.spotWsService, requestID, websocket.OrderListPlaceOtocoSpotWsApiMethod, request.buildParams())
 }
 
 // Symbol set symbol

@@ -30,10 +30,12 @@ func (s *orderListPlaceDeprecatedServiceWsTestSuite) SetupTest() {
 	s.client = mock.NewMockClient(s.ctrl)
 
 	s.orderListPlace = &OrderListPlaceWsService{
-		c:         s.client,
-		ApiKey:    s.apiKey,
-		SecretKey: s.secretKey,
-		KeyType:   s.signedKey,
+		spotWsService: spotWsService{
+			c:         s.client,
+			ApiKey:    s.apiKey,
+			SecretKey: s.secretKey,
+			KeyType:   s.signedKey,
+		},
 	}
 
 	s.orderListPlaceRequest = NewOrderListPlaceWsRequest().
@@ -204,12 +206,24 @@ func (s *orderListPlaceDeprecatedServiceWsTestSuite) TestOrderListPlaceSync_Empt
 	s.Error(err)
 }
 
+func (s *orderListPlaceDeprecatedServiceWsTestSuite) TestOrderListPlaceSync_InvalidResponse() {
+	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
+
+	s.client.EXPECT().WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return([]byte("not-json"), nil).Times(1)
+
+	response, err := s.orderListPlace.SyncDo(s.requestID, s.orderListPlaceRequest)
+	s.Nil(response)
+	s.Error(err)
+}
+
 func (s *orderListPlaceDeprecatedServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {
 	s.orderListPlace = &OrderListPlaceWsService{
-		c:          s.client,
-		ApiKey:     apiKey,
-		SecretKey:  secretKey,
-		KeyType:    signKeyType,
-		TimeOffset: timeOffset,
+		spotWsService: spotWsService{
+			c:          s.client,
+			ApiKey:     apiKey,
+			SecretKey:  secretKey,
+			KeyType:    signKeyType,
+			TimeOffset: timeOffset,
+		},
 	}
 }

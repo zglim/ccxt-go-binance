@@ -27,10 +27,12 @@ func (s *orderListCancelServiceWsTestSuite) SetupTest() {
 	s.client = mock.NewMockClient(s.ctrl)
 
 	s.orderListCancel = &OrderListCancelWsService{
-		c:         s.client,
-		ApiKey:    s.apiKey,
-		SecretKey: s.secretKey,
-		KeyType:   s.signedKey,
+		spotWsService: spotWsService{
+			c:         s.client,
+			ApiKey:    s.apiKey,
+			SecretKey: s.secretKey,
+			KeyType:   s.signedKey,
+		},
 	}
 
 	s.orderListCancelRequest = NewOrderListCancelWsRequest().
@@ -194,12 +196,24 @@ func (s *orderListCancelServiceWsTestSuite) TestOrderListCancelSync_EmptySignKey
 	s.Error(err)
 }
 
+func (s *orderListCancelServiceWsTestSuite) TestOrderListCancelSync_InvalidResponse() {
+	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
+
+	s.client.EXPECT().WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return([]byte("not-json"), nil).Times(1)
+
+	response, err := s.orderListCancel.SyncDo(s.requestID, s.orderListCancelRequest)
+	s.Nil(response)
+	s.Error(err)
+}
+
 func (s *orderListCancelServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {
 	s.orderListCancel = &OrderListCancelWsService{
-		c:          s.client,
-		ApiKey:     apiKey,
-		SecretKey:  secretKey,
-		KeyType:    signKeyType,
-		TimeOffset: timeOffset,
+		spotWsService: spotWsService{
+			c:          s.client,
+			ApiKey:     apiKey,
+			SecretKey:  secretKey,
+			KeyType:    signKeyType,
+			TimeOffset: timeOffset,
+		},
 	}
 }

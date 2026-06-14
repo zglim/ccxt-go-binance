@@ -30,10 +30,12 @@ func (s *sorOrderTestServiceWsTestSuite) SetupTest() {
 	s.client = mock.NewMockClient(s.ctrl)
 
 	s.sorOrderTest = &SorOrderTestWsService{
-		c:         s.client,
-		ApiKey:    s.apiKey,
-		SecretKey: s.secretKey,
-		KeyType:   s.signedKey,
+		spotWsService: spotWsService{
+			c:         s.client,
+			ApiKey:    s.apiKey,
+			SecretKey: s.secretKey,
+			KeyType:   s.signedKey,
+		},
 	}
 
 	s.sorOrderTestRequest = NewSorOrderTestWsRequest().
@@ -237,12 +239,24 @@ func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTestSync_EmptySignKeyType()
 	s.Error(err)
 }
 
+func (s *sorOrderTestServiceWsTestSuite) TestSorOrderTestSync_InvalidResponse() {
+	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
+
+	s.client.EXPECT().WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return([]byte("not-json"), nil).Times(1)
+
+	response, err := s.sorOrderTest.SyncDo(s.requestID, s.sorOrderTestRequest)
+	s.Nil(response)
+	s.Error(err)
+}
+
 func (s *sorOrderTestServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {
 	s.sorOrderTest = &SorOrderTestWsService{
-		c:          s.client,
-		ApiKey:     apiKey,
-		SecretKey:  secretKey,
-		KeyType:    signKeyType,
-		TimeOffset: timeOffset,
+		spotWsService: spotWsService{
+			c:          s.client,
+			ApiKey:     apiKey,
+			SecretKey:  secretKey,
+			KeyType:    signKeyType,
+			TimeOffset: timeOffset,
+		},
 	}
 }

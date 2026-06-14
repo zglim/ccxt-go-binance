@@ -36,10 +36,12 @@ func (s *orderListPlaceOtocoServiceWsTestSuite) SetupTest() {
 	s.client = mock.NewMockClient(s.ctrl)
 
 	s.orderListPlaceOtoco = &OrderListPlaceOtocoWsService{
-		c:         s.client,
-		ApiKey:    s.apiKey,
-		SecretKey: s.secretKey,
-		KeyType:   s.signedKey,
+		spotWsService: spotWsService{
+			c:         s.client,
+			ApiKey:    s.apiKey,
+			SecretKey: s.secretKey,
+			KeyType:   s.signedKey,
+		},
 	}
 
 	s.orderListPlaceOtocoRequest = NewOrderListPlaceOtocoWsRequest().
@@ -223,12 +225,24 @@ func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtocoSync_Empt
 	s.Error(err)
 }
 
+func (s *orderListPlaceOtocoServiceWsTestSuite) TestOrderListPlaceOtocoSync_InvalidResponse() {
+	s.reset(s.apiKey, s.secretKey, s.signedKey, s.timeOffset)
+
+	s.client.EXPECT().WriteSync(s.requestID, gomock.Any(), gomock.Any()).Return([]byte("not-json"), nil).Times(1)
+
+	response, err := s.orderListPlaceOtoco.SyncDo(s.requestID, s.orderListPlaceOtocoRequest)
+	s.Nil(response)
+	s.Error(err)
+}
+
 func (s *orderListPlaceOtocoServiceWsTestSuite) reset(apiKey, secretKey, signKeyType string, timeOffset int64) {
 	s.orderListPlaceOtoco = &OrderListPlaceOtocoWsService{
-		c:          s.client,
-		ApiKey:     apiKey,
-		SecretKey:  secretKey,
-		KeyType:    signKeyType,
-		TimeOffset: timeOffset,
+		spotWsService: spotWsService{
+			c:          s.client,
+			ApiKey:     apiKey,
+			SecretKey:  secretKey,
+			KeyType:    signKeyType,
+			TimeOffset: timeOffset,
+		},
 	}
 }
